@@ -129,10 +129,13 @@ def daily_analysis():
         }), 500
 
 
-@app.route('/api/player-analysis', methods=['POST'])
+@app.route('/api/player-analysis', methods=['GET', 'POST'])
 def player_analysis():
     """
     Analiza specifičnog igrača
+
+    GET query params:
+        ?player_id=203081&prop_type=points&line=23.0
 
     POST body (JSON):
     {
@@ -147,6 +150,69 @@ def player_analysis():
     }
     """
     try:
+        # Handle GET request with query parameters
+        if request.method == 'GET':
+            player_id = request.args.get('player_id')
+            prop_type = request.args.get('prop_type', 'points')
+            line = request.args.get('line')
+
+            if not player_id:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing required parameter: player_id'
+                }), 400
+
+            if not line:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing required parameter: line'
+                }), 400
+
+            try:
+                player_id = int(player_id)
+                line = float(line)
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid player_id or line value'
+                }), 400
+
+            logger.info(f"Quick player analysis: player_id={player_id}, {prop_type}={line}")
+
+            # Get player info
+            from nba_api.stats.static import players as players_static
+            all_players = players_static.get_players()
+            player = next((p for p in all_players if p['id'] == player_id), None)
+
+            if not player:
+                return jsonify({
+                    'success': False,
+                    'error': f'Player with id {player_id} not found'
+                }), 404
+
+            # Run simple analysis using scoring model directly
+            from analysis.scoring_model import PropsScoringModel
+            scorer = PropsScoringModel(analysis.fetcher)
+
+            result = scorer.analyze_prop(
+                player_name=player['full_name'],
+                opponent_team_name=None,  # Will use current opponent if available
+                is_home_game=None,  # Will detect from schedule
+                prop_type=prop_type,
+                line=line
+            )
+
+            return jsonify({
+                'success': True,
+                'timestamp': datetime.now().isoformat(),
+                'player': player['full_name'],
+                'player_id': player_id,
+                'prop_type': prop_type,
+                'line': line,
+                'result': result
+            }), 200
+
+        # Handle POST request with JSON body
         data = request.get_json()
 
         if not data:
