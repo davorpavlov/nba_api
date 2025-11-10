@@ -58,3 +58,6 @@ docker-compose.yml
 tests/
 *.ipynb
 .jupyter/
+
+# Local nba_api package (use PyPI version instead)
+src/

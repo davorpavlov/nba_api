@@ -12,9 +12,9 @@ from nba_api.stats.static import players, teams
 from nba_api.stats.endpoints import (
     playergamelog,
     playerdashboardbygeneralsplits,
-    playerdashboardbyopponent,
+    # playerdashboardbyopponent,  # Not available in nba_api - use leaguegamefinder instead
     teamdashboardbygeneralsplits,
-    teamdashboardbyopponent,
+    # teamdashboardbyopponent,  # Not available in nba_api - use leaguegamefinder instead
     leaguedashteamstats,
     leaguedashplayerstats,
     shotchartdetail,
@@ -234,34 +234,54 @@ class NBADataFetcher:
         """
         Dohvati statistike igrača protiv određenog tima
 
+        Note: Uses leaguegamefinder instead of playerdashboardbyopponent (not available in nba_api)
+
         Args:
             player_id: NBA player ID
             opponent_team_id: Opponent team ID (None = protiv svih timova)
 
         Returns:
-            DataFrame sa opponent stats
+            DataFrame sa opponent stats (aggregated from game finder)
         """
         try:
             logger.info(f"Fetching opponent stats for player {player_id}")
 
-            vs_opp = safe_api_call(
-                playerdashboardbyopponent.PlayerDashboardByOpponent,
-                player_id=str(player_id),
-                season=self.season,
+            # Use leaguegamefinder with player_id filter
+            games = safe_api_call(
+                leaguegamefinder.LeagueGameFinder,
+                player_id_nullable=str(player_id),
+                vs_team_id_nullable=str(opponent_team_id) if opponent_team_id else None,
+                season_nullable=self.season,
                 timeout=self.timeout
             )
 
-            if vs_opp is None:
+            if games is None:
                 return pd.DataFrame()
 
-            df = vs_opp.get_data_frames()[0]
+            df = games.get_data_frames()[0]
 
-            # Filter za specifičan tim ako je naveden
-            if opponent_team_id and not df.empty and 'OPPONENT_TEAM_ID' in df.columns:
-                df = df[df['OPPONENT_TEAM_ID'] == opponent_team_id]
+            if df.empty:
+                return pd.DataFrame()
+
+            # Aggregate stats by opponent (if no specific opponent, group by all opponents)
+            if opponent_team_id:
+                # Single opponent - aggregate all games
+                agg_stats = pd.DataFrame([{
+                    'OPPONENT_TEAM_ID': opponent_team_id,
+                    'GP': len(df),
+                    'PTS': df['PTS'].mean(),
+                    'REB': df['REB'].mean(),
+                    'AST': df['AST'].mean(),
+                    'FG_PCT': df['FG_PCT'].mean(),
+                    'FG3_PCT': df['FG3_PCT'].mean(),
+                    'FT_PCT': df['FT_PCT'].mean(),
+                }])
+            else:
+                # Return empty - too expensive to aggregate all opponents
+                agg_stats = pd.DataFrame()
 
             logger.info(f"Retrieved opponent stats for player {player_id}")
-            return df
+            return agg_stats
 
         except Exception as e:
             logger.error(f"Error fetching opponent stats for player {player_id}: {e}")
@@ -447,33 +467,54 @@ class NBADataFetcher:
         """
         Dohvati team statistike protiv određenog protivnika
 
+        Note: Uses leaguegamefinder instead of teamdashboardbyopponent (not available in nba_api)
+
         Args:
             team_id: NBA team ID
             opponent_team_id: Opponent team ID (None = protiv svih)
 
         Returns:
-            DataFrame sa opponent stats
+            DataFrame sa opponent stats (aggregated from game finder)
         """
         try:
             logger.info(f"Fetching opponent stats for team {team_id}")
 
-            vs_opp = safe_api_call(
-                teamdashboardbyopponent.TeamDashboardByOpponent,
-                team_id=str(team_id),
-                season=self.season,
+            # Use leaguegamefinder with team_id filter
+            games = safe_api_call(
+                leaguegamefinder.LeagueGameFinder,
+                team_id_nullable=str(team_id),
+                vs_team_id_nullable=str(opponent_team_id) if opponent_team_id else None,
+                season_nullable=self.season,
                 timeout=self.timeout
             )
 
-            if vs_opp is None:
+            if games is None:
                 return pd.DataFrame()
 
-            df = vs_opp.get_data_frames()[0]
+            df = games.get_data_frames()[0]
 
-            if opponent_team_id and not df.empty and 'OPPONENT_TEAM_ID' in df.columns:
-                df = df[df['OPPONENT_TEAM_ID'] == opponent_team_id]
+            if df.empty:
+                return pd.DataFrame()
+
+            # Aggregate stats by opponent
+            if opponent_team_id:
+                # Single opponent - aggregate all games
+                agg_stats = pd.DataFrame([{
+                    'OPPONENT_TEAM_ID': opponent_team_id,
+                    'GP': len(df),
+                    'W_PCT': (df['WL'] == 'W').sum() / len(df) if len(df) > 0 else 0,
+                    'PTS': df['PTS'].mean(),
+                    'OPP_PTS': df['PTS'].mean() if 'OPP_PTS' in df.columns else 0,  # Approximation
+                    'FG_PCT': df['FG_PCT'].mean(),
+                    'FG3_PCT': df['FG3_PCT'].mean(),
+                    'FT_PCT': df['FT_PCT'].mean(),
+                }])
+            else:
+                # Return empty - too expensive to aggregate all opponents
+                agg_stats = pd.DataFrame()
 
             logger.info(f"Retrieved opponent stats for team {team_id}")
-            return df
+            return agg_stats
 
         except Exception as e:
             logger.error(f"Error fetching opponent stats for team {team_id}: {e}")

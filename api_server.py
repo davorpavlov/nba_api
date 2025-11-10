@@ -27,7 +27,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration
-CURRENT_SEASON = os.getenv('NBA_SEASON', '2024-25')
+CURRENT_SEASON = os.getenv('NBA_SEASON', '2025-26')
 DEFAULT_MIN_CONFIDENCE = float(os.getenv('MIN_CONFIDENCE', '0.65'))
 DEFAULT_TOP_N = int(os.getenv('TOP_N', '10'))
 
@@ -129,10 +129,13 @@ def daily_analysis():
         }), 500
 
 
-@app.route('/api/player-analysis', methods=['POST'])
+@app.route('/api/player-analysis', methods=['GET', 'POST'])
 def player_analysis():
     """
     Analiza specifičnog igrača
+
+    GET query params:
+        ?player_id=203081&prop_type=points&line=23.0
 
     POST body (JSON):
     {
@@ -147,6 +150,115 @@ def player_analysis():
     }
     """
     try:
+        # Handle GET request with query parameters
+        if request.method == 'GET':
+            player_id = request.args.get('player_id')
+            prop_type = request.args.get('prop_type', 'points')
+            line = request.args.get('line')
+
+            if not player_id:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing required parameter: player_id'
+                }), 400
+
+            if not line:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing required parameter: line'
+                }), 400
+
+            try:
+                player_id = int(player_id)
+                line = float(line)
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid player_id or line value'
+                }), 400
+
+            logger.info(f"Quick player analysis: player_id={player_id}, {prop_type}={line}")
+
+            # Get optional parameters
+            team_id = request.args.get('team_id')
+            opponent_team_id = request.args.get('opponent_team_id')
+            is_home = request.args.get('is_home', 'true').lower() == 'true'
+
+            # Get player info
+            from nba_api.stats.static import players as players_static
+            all_players = players_static.get_players()
+            player = next((p for p in all_players if p['id'] == player_id), None)
+
+            if not player:
+                return jsonify({
+                    'success': False,
+                    'error': f'Player with id {player_id} not found'
+                }), 404
+
+            # If team_id not provided, try to find it from player's recent games
+            if not team_id:
+                try:
+                    game_log = analysis.fetcher.get_player_game_log(player_id, last_n=1)
+                    if not game_log.empty:
+                        team_id = int(game_log.iloc[0]['TEAM_ID'])
+                    else:
+                        return jsonify({
+                            'success': False,
+                            'error': 'Could not determine player team. Please provide team_id parameter.'
+                        }), 400
+                except Exception as e:
+                    logger.warning(f"Could not determine team_id: {e}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'Could not determine player team: {str(e)}'
+                    }), 400
+
+            # If opponent not provided, try to get today's game
+            if not opponent_team_id:
+                try:
+                    games = analysis.fetcher.get_todays_games()
+                    player_game = next((g for g in games if team_id in [g['home_team_id'], g['visitor_team_id']]), None)
+                    if player_game:
+                        opponent_team_id = player_game['visitor_team_id'] if team_id == player_game['home_team_id'] else player_game['home_team_id']
+                        is_home = team_id == player_game['home_team_id']
+                    else:
+                        logger.warning(f"No game found today for team {team_id}")
+                        return jsonify({
+                            'success': False,
+                            'error': 'No game found today for this player. Please provide opponent_team_id parameter.'
+                        }), 400
+                except Exception as e:
+                    logger.warning(f"Could not find today's game: {e}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'Could not find today\'s game: {str(e)}'
+                    }), 400
+
+            # Now run the analysis with all required params
+            result = analysis.scoring_model.analyze_player_prop(
+                player_id=player_id,
+                player_name=player['full_name'],
+                team_id=int(team_id),
+                opponent_team_id=int(opponent_team_id),
+                prop_type=prop_type,
+                prop_line=line,
+                is_home_game=is_home
+            )
+
+            return jsonify({
+                'success': True,
+                'timestamp': datetime.now().isoformat(),
+                'player': player['full_name'],
+                'player_id': player_id,
+                'team_id': team_id,
+                'opponent_team_id': opponent_team_id,
+                'is_home_game': is_home,
+                'prop_type': prop_type,
+                'line': line,
+                'result': result
+            }), 200
+
+        # Handle POST request with JSON body
         data = request.get_json()
 
         if not data:

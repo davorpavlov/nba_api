@@ -8,7 +8,7 @@ CACHE_ENABLED = True
 CACHE_DURATION = 3600  # 1 sat
 
 # Analysis Configuration
-CURRENT_SEASON = "2024-25"
+CURRENT_SEASON = "2025-26"
 DEFAULT_GAMES_SAMPLE = 10  # Broj utakmica za analizu forme
 
 # Scoring Weights (ukupno = 1.0)
