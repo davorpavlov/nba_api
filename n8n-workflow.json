@@ -1,0 +1,219 @@
+{
+  "name": "NBA Props Daily Analysis",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Daily Trigger (8 AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://your-nba-api-domain.com/api/daily-analysis",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "min_confidence",
+              "value": "0.70"
+            },
+            {
+              "name": "top_n",
+              "value": "5"
+            },
+            {
+              "name": "prop_types",
+              "value": "points,rebounds,assists"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "2",
+      "name": "Fetch NBA Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter samo STRONG i OVER/UNDER picks\nconst results = items[0].json.results || [];\n\nconst filtered = results.filter(r => {\n  const rec = r.recommendation || '';\n  return rec.includes('STRONG') || rec.includes('OVER') || rec.includes('UNDER');\n});\n\nreturn filtered.map(r => ({\n  json: {\n    player: r.player_name,\n    prop_type: r.prop_type.toUpperCase(),\n    line: r.prop_line,\n    projected: r.projected_value,\n    edge: r.edge,\n    edge_pct: r.edge_pct,\n    confidence: (r.confidence_score * 100).toFixed(1) + '%',\n    recommendation: r.recommendation,\n    factors: r.factors,\n    timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "3",
+      "name": "Filter & Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.recommendation }}",
+              "operation": "contains",
+              "value2": "STRONG"
+            }
+          ]
+        }
+      },
+      "id": "4",
+      "name": "High Confidence Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.timestamp }}",
+            "Player": "={{ $json.player }}",
+            "Prop": "={{ $json.prop_type }}",
+            "Line": "={{ $json.line }}",
+            "Projected": "={{ $json.projected }}",
+            "Edge": "={{ $json.edge }}",
+            "Edge %": "={{ $json.edge_pct }}",
+            "Confidence": "={{ $json.confidence }}",
+            "Recommendation": "={{ $json.recommendation }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "5",
+      "name": "Append to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        1050,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_CREDENTIALS_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🏀 **NBA Props Alert** 🏀\n\n{{ $json.player }} - {{ $json.prop_type }}\n📊 Line: {{ $json.line }}\n📈 Projected: {{ $json.projected }}\n💰 Edge: {{ $json.edge }} ({{ $json.edge_pct }}%)\n\n✅ Recommendation: **{{ $json.recommendation }}**\n🎯 Confidence: {{ $json.confidence }}\n\n🔥 Factors:\n• Recent Form: {{ ($json.factors.recent_form * 100).toFixed(0) }}%\n• Opponent Matchup: {{ ($json.factors.opponent_matchup * 100).toFixed(0) }}%\n• Home/Away: {{ ($json.factors.home_away_split * 100).toFixed(0) }}%\n• Defense: {{ ($json.factors.opponent_defense * 100).toFixed(0) }}%\n• Pace: {{ ($json.factors.pace_factor * 100).toFixed(0) }}%\n• Usage: {{ ($json.factors.usage_factor * 100).toFixed(0) }}%",
+        "additionalFields": {}
+      },
+      "id": "6",
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIALS_ID",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Trigger (8 AM)": {
+      "main": [
+        [
+          {
+            "node": "Fetch NBA Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch NBA Analysis": {
+      "main": [
+        [
+          {
+            "node": "Filter & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Format": {
+      "main": [
+        [
+          {
+            "node": "High Confidence Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Confidence Only": {
+      "main": [
+        [
+          {
+            "node": "Append to Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-11-09T20:00:00.000Z",
+  "versionId": "1"
+}
