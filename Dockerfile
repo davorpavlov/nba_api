@@ -21,6 +21,9 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 # Copy application code
 COPY . .
 
+# Install local nba_api package
+RUN pip install --no-cache-dir -e .
+
 # Create necessary directories
 RUN mkdir -p logs output
 
