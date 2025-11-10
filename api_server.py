@@ -27,7 +27,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration
-CURRENT_SEASON = os.getenv('NBA_SEASON', '2024-25')
+CURRENT_SEASON = os.getenv('NBA_SEASON', '2025-26')
 DEFAULT_MIN_CONFIDENCE = float(os.getenv('MIN_CONFIDENCE', '0.65'))
 DEFAULT_TOP_N = int(os.getenv('TOP_N', '10'))
 
@@ -198,7 +198,7 @@ def player_analysis():
             # If team_id not provided, try to find it from player's recent games
             if not team_id:
                 try:
-                    game_log = analysis.fetcher.get_player_game_log(player_id, last_n_games=1)
+                    game_log = analysis.fetcher.get_player_game_log(player_id, last_n=1)
                     if not game_log.empty:
                         team_id = int(game_log.iloc[0]['TEAM_ID'])
                     else:
@@ -235,7 +235,7 @@ def player_analysis():
                     }), 400
 
             # Now run the analysis with all required params
-            result = analysis.scorer.analyze_player_prop(
+            result = analysis.scoring_model.analyze_player_prop(
                 player_id=player_id,
                 player_name=player['full_name'],
                 team_id=int(team_id),
