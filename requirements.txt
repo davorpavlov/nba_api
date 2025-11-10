@@ -1,7 +1,7 @@
 # NBA Props Analysis API - Requirements
 
 # Core NBA API
-nba_api>=1.1.0
+# nba_api installed from local src/ directory (see Dockerfile: pip install -e .)
 
 # Data processing
 pandas>=1.3.0
